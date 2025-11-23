@@ -1,11 +1,83 @@
 <!DOCTYPE html>
-<html>
-  <head>
+<html lang="ja">
+<head>
     <meta charset="utf-8">
-    <title>Hello wasm-pack!</title>
-  </head>
-  <body>
-    <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
+    <title>イナズマ トーナメント ジェネレーター</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>イナズマ トーナメント ジェネレーター</h1>
+
+    <div class="container">
+        <div class="settings-panel">
+            <h2>設定</h2>
+            
+            <div class="setting-item">
+                <label for="player-level">自分のチームレベル:</label>
+                <input type="number" id="player-level" value="50" min="1" max="99">
+            </div>
+
+            <div class="setting-item">
+                <label for="team-count">参加チーム数:</label>
+                <select id="team-count">
+                    <option value="4">4</option>
+                    <option value="8" selected>8</option>
+                    <option value="16">16</option>
+                </select>
+            </div>
+
+            <div class="setting-item">
+                <label for="level-tolerance">レベル許容範囲 (±):</label>
+                <input type="number" id="level-tolerance" value="10" min="0" max="50">
+            </div>
+
+            <div class="setting-item">
+                <fieldset>
+                    <legend>対戦モード</legend>
+                    <div>
+                        <input type="checkbox" id="mode-story" name="modes" value="ストーリー" checked>
+                        <label for="mode-story">ストーリー</label>
+                    </div>
+                    <div>
+                        <input type="checkbox" id="mode-chronicle" name="modes" value="クロニクル" checked>
+                        <label for="mode-chronicle">クロニクル</label>
+                    </div>
+                    <div>
+                        <input type="checkbox" id="mode-versus" name="modes" value="対戦" checked>
+                        <label for="mode-versus">対戦</label>
+                    </div>
+                </fieldset>
+            </div>
+            
+            <div class="setting-item">
+                <button id="generate-btn">トーナメントを生成！</button>
+            </div>
+
+            <div class="setting-item opponent-list-container">
+                <fieldset>
+                    <legend>解放済み対戦相手</legend>
+                    <div class="opponent-list-controls">
+                        <button id="select-all-opponents">すべて選択</button>
+                        <button id="deselect-all-opponents">すべて解除</button>
+                    </div>
+                    <div id="opponent-list">
+                        <!-- ここに対戦相手のチェックボックスが動的に入ります -->
+                    </div>
+                </fieldset>
+            </div>
+            <div class="setting-item">
+                <p id="playable-opponents-count">対戦可能なチーム数: <span>0</span></p>
+            </div>
+        </div>
+
+        <div class="tournament-panel">
+            <h2 id="tournament-status">トーナメント表</h2>
+            <div id="tournament-bracket">
+                <!-- ここにトーナメント表が動的に入ります -->
+            </div>
+        </div>
+    </div>
+
     <script src="./main.js" type="module"></script>
-  </body>
+</body>
 </html>
