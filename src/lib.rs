@@ -2,11 +2,10 @@ use wasm_bindgen::prelude::*;
 use serde::{Serialize, Deserialize};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use web_sys;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use rand::Rng;
-use gloo_net::http::Request;
-
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -24,11 +23,8 @@ pub struct Difficulty {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Opponent {
-    pub id: String, // "チーム名 (シリーズ略称) - モード" の形式
-    pub team_name: String, // 純粋なチーム名
-    pub series_short: String, // シリーズ略称 (e.g., "VIC")
-    pub series_full: String, // シリーズフルネーム
-    pub source: String, // "ストーリー", "クロニクル", "対戦"
+    pub name: String, // "チーム名 (シリーズ略称) - モード" の形式
+    pub source: String,
     pub difficulties: Vec<Difficulty>,
     pub level: u8, // 試合で実際に使われるレベル
     pub difficulty_name: String, // 試合で実際に使われる難易度名
@@ -97,50 +93,23 @@ struct CsvRecord {
     d4_level: String,
 }
 
-
-async fn load_opponents_from_csv() -> Result<Vec<Opponent>, String> {
-    // /docs/Teams.csv/
-    let csv_text = Request::get("Teams.csv")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch CSV: {}", e))?
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read response text: {}", e))?;
-
-    let mut reader = csv::Reader::from_reader(csv_text.as_bytes());
+fn load_opponents_from_csv() -> Result<Vec<Opponent>, String> {
+    const CSV_DATA: &str = include_str!("../Teams.csv");
+    let mut reader = csv::Reader::from_reader(CSV_DATA.as_bytes());
     
     let mut opponents_map: IndexMap<String, Opponent> = IndexMap::new();
 
     for result in reader.deserialize::<CsvRecord>() {
         let record = result.map_err(|e| e.to_string())?;
         
-        let unique_id = format!("{} ({}) - {}", record.team_name, record.series_short, record.mode);
+        let unique_name = format!("{} ({}) - {}", record.team_name, record.series_short, record.mode);
 
-        let opponent = opponents_map.entry(unique_id.clone()).or_insert_with(|| {
-            let series_full = match record.series_short.as_str() {
-                "IE1" => "イナズマイレブン",
-                "IE2" => "イナズマイレブン2 脅威の侵略者",
-                "IE3" => "イナズマイレブン3 世界への挑戦!!",
-                "GO1" => "イナズマイレブンGO",
-                "GO2" => "イナズマイレブンGO2 クロノ・ストーン",
-                "GO3" => "イナズマイレブンGO3 ギャラクシー",
-                "ALS" => "イナズマイレブン アレスの天秤",
-                "ORI" => "イナズマイレブン オリオンの刻印",
-                "VIC" => "イナズマイレブン 英雄たちのヴィクトリーロード",
-                _ => "不明なシリーズ",
-            }.to_string();
-
-            Opponent {
-                id: unique_id,
-                team_name: record.team_name.clone(),
-                series_short: record.series_short.clone(),
-                series_full,
-                source: record.mode.clone(),
-                difficulties: Vec::new(),
-                level: 0, // 初期値
-                difficulty_name: String::new(), // 初期値
-            }
+        let opponent = opponents_map.entry(unique_name.clone()).or_insert_with(|| Opponent {
+            name: unique_name,
+            source: record.mode.clone(),
+            difficulties: Vec::new(),
+            level: 0, // 初期値
+            difficulty_name: String::new(), // 初期値
         });
         
         let difficulties_data = [
@@ -158,11 +127,6 @@ async fn load_opponents_from_csv() -> Result<Vec<Opponent>, String> {
                         level,
                     });
                 }
-                // difficulties が空でなければ、最初の難易度をデフォルトとして設定
-                if let Some(first_difficulty) = opponent.difficulties.first() {
-                    opponent.level = first_difficulty.level;
-                    opponent.difficulty_name = first_difficulty.name.clone();
-                }
             }
         }
     }
@@ -171,18 +135,18 @@ async fn load_opponents_from_csv() -> Result<Vec<Opponent>, String> {
 }
 
 // 指定された設定に基づいて、対戦可能な相手チームのリストを返すヘルパー関数
-async fn get_eligible_opponents(
+fn get_eligible_opponents(
     settings: &TournamentSettings,
 ) -> Result<Vec<Opponent>, String> {
-    let all_opponents = load_opponents_from_csv().await?;
+    let all_opponents = load_opponents_from_csv()?;
     let mut potential_opponents: Vec<Opponent> = Vec::new();
     let min_player_level = settings.player_team_level.saturating_sub(settings.level_tolerance_lower);
     let max_player_level = settings.player_team_level.saturating_add(settings.level_tolerance_upper);
 
     for opponent in all_opponents.iter() {
-        if settings.unlocked_opponents.contains(&opponent.id) && settings.allowed_sources.contains(&opponent.source) {
+        if settings.unlocked_opponents.contains(&opponent.name) && settings.allowed_sources.contains(&opponent.source) {
             let mut best_difficulty: Option<&Difficulty> = None;
-            let mut min_diff_level = 255;
+            let mut min_diff_level = 255; 
 
             for difficulty in opponent.difficulties.iter() {
                 if difficulty.level >= min_player_level && difficulty.level <= max_player_level {
@@ -200,7 +164,6 @@ async fn get_eligible_opponents(
                 new_opponent.difficulty_name = diff.name.clone();
                 potential_opponents.push(new_opponent);
             }
-            
         }
     }
     Ok(potential_opponents)
@@ -208,16 +171,16 @@ async fn get_eligible_opponents(
 
 
 #[wasm_bindgen]
-pub async fn get_playable_opponents_info(settings_val: JsValue) -> Result<JsValue, JsValue> {
+pub fn get_playable_opponents_info(settings_val: JsValue) -> Result<JsValue, JsValue> {
     let settings: TournamentSettings = serde_wasm_bindgen::from_value(settings_val)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize settings: {}", e)))?;
     
-    let eligible_opponents = get_eligible_opponents(&settings).await
+    let eligible_opponents = get_eligible_opponents(&settings)
         .map_err(|e| JsValue::from_str(&e))?;
     
     let formatted_opponents: Vec<String> = eligible_opponents
         .iter()
-        .map(|o| format!("{} (Lv.{})", o.id, o.level))
+        .map(|o| format!("{} (Lv.{})", o.name, o.level))
         .collect();
 
     let info = PlayableOpponentInfo {
@@ -231,13 +194,13 @@ pub async fn get_playable_opponents_info(settings_val: JsValue) -> Result<JsValu
 
 
 #[wasm_bindgen]
-pub async fn generate_tournament(settings_val: JsValue) -> Result<JsValue, JsValue> {
+pub fn generate_tournament(settings_val: JsValue) -> Result<JsValue, JsValue> {
     let settings: TournamentSettings = serde_wasm_bindgen::from_value(settings_val)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize settings: {}", e)))?;
 
     let mut rng = thread_rng();
 
-    let potential_opponents = get_eligible_opponents(&settings).await
+    let potential_opponents = get_eligible_opponents(&settings)
         .map_err(|e| JsValue::from_str(&e))?;
     
     let num_opponents_to_select = (settings.team_count as i32 - 1).max(0) as usize;
@@ -252,7 +215,7 @@ pub async fn generate_tournament(settings_val: JsValue) -> Result<JsValue, JsVal
     
     let participants_map: HashMap<String, Opponent> = selected_opponents
         .into_iter()
-        .map(|o| (o.id.clone(), o))
+        .map(|o| (o.name.clone(), o))
         .collect();
 
     let mut participant_names: Vec<String> = participants_map.keys().cloned().collect();
@@ -328,9 +291,9 @@ pub async fn update_match_result(
             let stronger_team_win_rate = 0.5 + (win_rate_bonus as f64 / 100.0);
 
             let winner = if rng.gen_bool(stronger_team_win_rate) {
-                if team1_is_stronger { &team1.id } else { &team2.id }
+                if team1_is_stronger { &team1.name } else { &team2.name }
             } else {
-                if team1_is_stronger { &team2.id } else { &team1.id }
+                if team1_is_stronger { &team2.name } else { &team1.name }
             };
             
             if let Some(match_to_update) = tournament.rounds[round_index].get_mut(i) {
@@ -383,8 +346,8 @@ pub async fn update_match_result(
 }
 
 #[wasm_bindgen]
-pub async fn get_all_opponents() -> Result<JsValue, JsValue> {
-    let opponents = load_opponents_from_csv().await
+pub fn get_all_opponents() -> Result<JsValue, JsValue> {
+    let opponents = load_opponents_from_csv()
         .map_err(|e| JsValue::from_str(&e))?;
     serde_wasm_bindgen::to_value(&opponents)
         .map_err(|e| JsValue::from_str(&e.to_string()))
