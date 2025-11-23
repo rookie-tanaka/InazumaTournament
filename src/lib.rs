@@ -3,7 +3,9 @@ use serde::{Serialize, Deserialize};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use web_sys;
+use indexmap::IndexMap;
 use std::collections::HashMap;
+use rand::Rng;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -24,13 +26,17 @@ pub struct Opponent {
     pub name: String, // "チーム名 (シリーズ略称) - モード" の形式
     pub source: String,
     pub difficulties: Vec<Difficulty>,
+    pub level: u8, // 試合で実際に使われるレベル
+    pub difficulty_name: String, // 試合で実際に使われる難易度名
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TournamentSettings {
     pub player_team_level: u8,
     pub team_count: u8,
-    pub level_tolerance: u8,
+    pub level_tolerance_lower: u8,
+    pub level_tolerance_upper: u8,
+    pub level_win_rate_modifier: u8,
     pub allowed_sources: Vec<String>,
     pub unlocked_opponents: Vec<String>, // "チーム名 (シリーズ略称) - モード" の形式
 }
@@ -44,6 +50,8 @@ pub struct Match {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Tournament {
+    pub participants: HashMap<String, Opponent>,
+    pub level_win_rate_modifier: u8,
     pub rounds: Vec<Vec<Match>>,
     pub bye_teams: Vec<String>,
     pub status: String,
@@ -53,7 +61,7 @@ pub struct Tournament {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlayableOpponentInfo {
     pub count: usize,
-    pub opponents: Vec<String>, // "チーム名 (難易度名)" の形式
+    pub opponents: Vec<String>,
 }
 
 
@@ -89,19 +97,19 @@ fn load_opponents_from_csv() -> Result<Vec<Opponent>, String> {
     const CSV_DATA: &str = include_str!("../Teams.csv");
     let mut reader = csv::Reader::from_reader(CSV_DATA.as_bytes());
     
-    // ユニークな名前をキーとする
-    let mut opponents_map: HashMap<String, Opponent> = HashMap::new();
+    let mut opponents_map: IndexMap<String, Opponent> = IndexMap::new();
 
     for result in reader.deserialize::<CsvRecord>() {
         let record = result.map_err(|e| e.to_string())?;
         
-        // チーム名 (シリーズ略称) - モード の形式でユニークな名前を生成
         let unique_name = format!("{} ({}) - {}", record.team_name, record.series_short, record.mode);
 
         let opponent = opponents_map.entry(unique_name.clone()).or_insert_with(|| Opponent {
             name: unique_name,
             source: record.mode.clone(),
             difficulties: Vec::new(),
+            level: 0, // 初期値
+            difficulty_name: String::new(), // 初期値
         });
         
         let difficulties_data = [
@@ -126,19 +134,19 @@ fn load_opponents_from_csv() -> Result<Vec<Opponent>, String> {
     Ok(opponents_map.into_values().collect())
 }
 
-// 指定された設定に基づいて、対戦可能な相手チームと選択された難易度名のリストを返すヘルパー関数
+// 指定された設定に基づいて、対戦可能な相手チームのリストを返すヘルパー関数
 fn get_eligible_opponents(
     settings: &TournamentSettings,
-) -> Result<Vec<(String, String)>, String> { // (ユニークなチーム名, 難易度名)
+) -> Result<Vec<Opponent>, String> {
     let all_opponents = load_opponents_from_csv()?;
-    let mut potential_opponents: Vec<(String, String)> = Vec::new();
-    let min_player_level = settings.player_team_level.saturating_sub(settings.level_tolerance);
-    let max_player_level = settings.player_team_level.saturating_add(settings.level_tolerance);
+    let mut potential_opponents: Vec<Opponent> = Vec::new();
+    let min_player_level = settings.player_team_level.saturating_sub(settings.level_tolerance_lower);
+    let max_player_level = settings.player_team_level.saturating_add(settings.level_tolerance_upper);
 
     for opponent in all_opponents.iter() {
         if settings.unlocked_opponents.contains(&opponent.name) && settings.allowed_sources.contains(&opponent.source) {
             let mut best_difficulty: Option<&Difficulty> = None;
-            let mut min_diff_level = 255; // レベル差の最小値
+            let mut min_diff_level = 255; 
 
             for difficulty in opponent.difficulties.iter() {
                 if difficulty.level >= min_player_level && difficulty.level <= max_player_level {
@@ -151,9 +159,10 @@ fn get_eligible_opponents(
             }
 
             if let Some(diff) = best_difficulty {
-                potential_opponents.push((opponent.name.clone(), diff.name.clone()));
-            } else {
-                 web_sys::console::log_1(&format!("Opponent '{}' has no suitable difficulty within tolerance.", opponent.name).into());
+                let mut new_opponent = opponent.clone();
+                new_opponent.level = diff.level;
+                new_opponent.difficulty_name = diff.name.clone();
+                potential_opponents.push(new_opponent);
             }
         }
     }
@@ -171,7 +180,7 @@ pub fn get_playable_opponents_info(settings_val: JsValue) -> Result<JsValue, JsV
     
     let formatted_opponents: Vec<String> = eligible_opponents
         .iter()
-        .map(|(name, difficulty_name)| format!("{} ({})", name, difficulty_name))
+        .map(|o| format!("{} (Lv.{})", o.name, o.level))
         .collect();
 
     let info = PlayableOpponentInfo {
@@ -186,45 +195,39 @@ pub fn get_playable_opponents_info(settings_val: JsValue) -> Result<JsValue, JsV
 
 #[wasm_bindgen]
 pub fn generate_tournament(settings_val: JsValue) -> Result<JsValue, JsValue> {
-    web_sys::console::log_1(&"generate_tournament called".into());
-
     let settings: TournamentSettings = serde_wasm_bindgen::from_value(settings_val)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize settings: {}", e)))?;
-
-    web_sys::console::log_1(&format!("Received settings: {:?}", settings).into());
 
     let mut rng = thread_rng();
 
     let potential_opponents = get_eligible_opponents(&settings)
         .map_err(|e| JsValue::from_str(&e))?;
     
-    web_sys::console::log_1(&format!("Potential opponents with selected difficulties: {:?}", potential_opponents).into());
-
-    // 2. チーム数-1だけ、ランダムに抽選
     let num_opponents_to_select = (settings.team_count as i32 - 1).max(0) as usize;
-    if potential_opponents.is_empty() {
-        return Err(JsValue::from_str("No opponents found that match the criteria."));
+    if potential_opponents.len() < num_opponents_to_select {
+        return Err(JsValue::from_str(&format!("Not enough eligible opponents. Required: {}, Available: {}", num_opponents_to_select, potential_opponents.len())));
     }
-    // `potential_opponents`のタプルの最初の要素はすでにユニークな名前
-    let selected_opponent_teams: Vec<String> = potential_opponents
+    
+    let selected_opponents: Vec<Opponent> = potential_opponents
         .choose_multiple(&mut rng, num_opponents_to_select)
-        .map(|(unique_name, difficulty_name)| format!("{} ({})", unique_name, difficulty_name))
+        .cloned()
         .collect();
     
-    let mut participants = selected_opponent_teams;
-    participants.push("プレイヤー".to_string());
-    participants.shuffle(&mut rng);
+    let participants_map: HashMap<String, Opponent> = selected_opponents
+        .into_iter()
+        .map(|o| (o.name.clone(), o))
+        .collect();
 
-    web_sys::console::log_1(&format!("Selected participants for the tournament: {:?}", participants).into());
+    let mut participant_names: Vec<String> = participants_map.keys().cloned().collect();
+    participant_names.push("プレイヤー".to_string());
+    participant_names.shuffle(&mut rng);
 
-    // 3. 対戦表を作成 (1回戦のみ)
     let mut first_round_matches: Vec<Match> = Vec::new();
     let mut bye_teams: Vec<String> = Vec::new();
-    let mut participants_iter = participants.into_iter();
+    let mut participants_iter = participant_names.into_iter();
 
     if participants_iter.len() % 2 != 0 {
         if let Some(team_name) = participants_iter.next() {
-            web_sys::console::log_1(&format!("{} has a bye in the first round.", &team_name).into());
             bye_teams.push(team_name);
         }
     }
@@ -234,17 +237,18 @@ pub fn generate_tournament(settings_val: JsValue) -> Result<JsValue, JsValue> {
     }
 
     let tournament = Tournament {
+        participants: participants_map,
+        level_win_rate_modifier: settings.level_win_rate_modifier,
         rounds: vec![first_round_matches],
         bye_teams,
         status: "1回戦".to_string(),
     };
-    web_sys::console::log_1(&format!("Generated tournament structure: {:?}", tournament).into());
 
     serde_wasm_bindgen::to_value(&tournament).map_err(|e| JsValue::from_str(&format!("Failed to serialize tournament: {}", e)))
 }
 
 #[wasm_bindgen]
-pub fn update_match_result(
+pub async fn update_match_result(
     tournament_val: JsValue,
     round_index: usize,
     match_index: usize,
@@ -256,14 +260,13 @@ pub fn update_match_result(
     if let Some(round) = tournament.rounds.get_mut(round_index) {
         if let Some(match_to_update) = round.get_mut(match_index) {
             if match_to_update.winner.is_some() {
-                return serde_wasm_bindgen::to_value(&tournament).map_err(|e| JsValue::from_str(&e.to_string()));
+                 return serde_wasm_bindgen::to_value(&tournament).map_err(|e| JsValue::from_str(&e.to_string()));
             }
             match_to_update.winner = Some(winner_name.clone());
 
             let player_is_in_match = match_to_update.team1 == "プレイヤー" || match_to_update.team2 == "プレイヤー";
-            if player_is_in_match && match_to_update.winner.as_deref() != Some("プレイヤー") {
+            if player_is_in_match && winner_name != "プレイヤー" {
                 tournament.status = "ゲームオーバー".to_string();
-                web_sys::console::log_1(&"Game Over!".into());
                 return serde_wasm_bindgen::to_value(&tournament).map_err(|e| JsValue::from_str(&e.to_string()));
             }
         } else {
@@ -273,12 +276,35 @@ pub fn update_match_result(
         return Err(JsValue::from_str("Round index out of bounds."));
     }
 
+    let mut rng = thread_rng();
+    let round_matches_clone = tournament.rounds[round_index].clone();
+    for (i, m) in round_matches_clone.iter().enumerate() {
+        if m.winner.is_none() && m.team1 != "プレイヤー" && m.team2 != "プレイヤー" {
+            let team1 = tournament.participants.get(&m.team1).ok_or_else(|| JsValue::from_str("Team 1 not found"))?;
+            let team2 = tournament.participants.get(&m.team2).ok_or_else(|| JsValue::from_str("Team 2 not found"))?;
+
+            let level_diff = (team1.level as i16 - team2.level as i16).abs() as u8;
+            let modifier = tournament.level_win_rate_modifier;
+            let win_rate_bonus = (level_diff * modifier).min(50); 
+
+            let team1_is_stronger = team1.level > team2.level;
+            let stronger_team_win_rate = 0.5 + (win_rate_bonus as f64 / 100.0);
+
+            let winner = if rng.gen_bool(stronger_team_win_rate) {
+                if team1_is_stronger { &team1.name } else { &team2.name }
+            } else {
+                if team1_is_stronger { &team2.name } else { &team1.name }
+            };
+            
+            if let Some(match_to_update) = tournament.rounds[round_index].get_mut(i) {
+                match_to_update.winner = Some(winner.clone());
+            }
+        }
+    }
+    
     let current_round_finished = tournament.rounds[round_index].iter().all(|m| m.winner.is_some());
 
     if current_round_finished {
-        web_sys::console::log_1(&format!("Round {} finished.", round_index + 1).into());
-        let mut rng = thread_rng();
-
         let mut winners: Vec<String> = tournament.rounds[round_index]
             .iter()
             .filter_map(|m| m.winner.clone())
@@ -287,32 +313,31 @@ pub fn update_match_result(
         winners.append(&mut tournament.bye_teams);
         tournament.bye_teams.clear();
 
-        // 優勝者決定
         if winners.len() == 1 {
             tournament.status = format!("{} 優勝！", winners[0]);
-            web_sys::console::log_1(&"Tournament finished!".into());
-            return serde_wasm_bindgen::to_value(&tournament).map_err(|e| JsValue::from_str(&e.to_string()));
-        }
+        } else {
+            winners.shuffle(&mut rng);
+            let mut next_round_matches: Vec<Match> = Vec::new();
+            let mut participants_iter = winners.into_iter();
 
-        // 次のラウンドの組み合わせを作成
-        let mut next_round_matches: Vec<Match> = Vec::new();
-        let mut participants_iter = winners.into_iter();
-
-        if participants_iter.len() % 2 != 0 {
-            if let Some(team_name) = participants_iter.next() {
-                web_sys::console::log_1(&format!("{} has a bye in the next round.", &team_name).into());
-                tournament.bye_teams.push(team_name);
+            if participants_iter.len() % 2 != 0 {
+                if let Some(team_name) = participants_iter.next() {
+                    tournament.bye_teams.push(team_name);
+                }
             }
-        }
 
-        while let (Some(team1), Some(team2)) = (participants_iter.next(), participants_iter.next()) {
-            next_round_matches.push(Match { team1, team2, winner: None });
-        }
+            while let (Some(team1), Some(team2)) = (participants_iter.next(), participants_iter.next()) {
+                next_round_matches.push(Match { team1, team2, winner: None });
+            }
 
-        if !next_round_matches.is_empty() {
-            tournament.rounds.push(next_round_matches);
-            let next_round_num = tournament.rounds.len();
-            tournament.status = format!("{}回戦", next_round_num);
+            if !next_round_matches.is_empty() {
+                tournament.rounds.push(next_round_matches);
+                let next_round_num = tournament.rounds.len();
+                tournament.status = format!("{}回戦", next_round_num);
+            } else if tournament.bye_teams.len() == 1 { // 決勝で片方が不戦勝の場合
+                 tournament.status = format!("{} 優勝！", tournament.bye_teams[0]);
+                 tournament.bye_teams.clear();
+            }
         }
     }
 
