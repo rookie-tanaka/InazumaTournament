@@ -1,0 +1,27 @@
+{
+  "name": "inazumatournament",
+  "version": "1.0.0",
+  "description": "<div align=\"center\">",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "build:wasm": "rm -rf www/pkg && wasm-pack build --target web --out-dir www/pkg",
+    "serve": "npx http-server www",
+    "start": "npm run build:wasm && npm run serve",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rookie-tanaka/InazumaTournament.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/rookie-tanaka/InazumaTournament/issues"
+  },
+  "homepage": "https://github.com/rookie-tanaka/InazumaTournament#readme"
+}
