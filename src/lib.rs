@@ -23,8 +23,11 @@ pub struct Difficulty {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Opponent {
-    pub name: String, // "チーム名 (シリーズ略称) - モード" の形式
-    pub source: String,
+    pub id: String, // "チーム名 (シリーズ略称) - モード" の形式
+    pub team_name: String, // 純粋なチーム名
+    pub series_short: String, // シリーズ略称 (e.g., "VIC")
+    pub series_full: String, // シリーズフルネーム
+    pub source: String, // "ストーリー", "クロニクル", "対戦"
     pub difficulties: Vec<Difficulty>,
     pub level: u8, // 試合で実際に使われるレベル
     pub difficulty_name: String, // 試合で実際に使われる難易度名
@@ -102,14 +105,32 @@ fn load_opponents_from_csv() -> Result<Vec<Opponent>, String> {
     for result in reader.deserialize::<CsvRecord>() {
         let record = result.map_err(|e| e.to_string())?;
         
-        let unique_name = format!("{} ({}) - {}", record.team_name, record.series_short, record.mode);
+        let unique_id = format!("{} ({}) - {}", record.team_name, record.series_short, record.mode);
 
-        let opponent = opponents_map.entry(unique_name.clone()).or_insert_with(|| Opponent {
-            name: unique_name,
-            source: record.mode.clone(),
-            difficulties: Vec::new(),
-            level: 0, // 初期値
-            difficulty_name: String::new(), // 初期値
+        let opponent = opponents_map.entry(unique_id.clone()).or_insert_with(|| {
+            let series_full = match record.series_short.as_str() {
+                "IE1" => "イナズマイレブン",
+                "IE2" => "イナズマイレブン2 脅威の侵略者",
+                "IE3" => "イナズマイレブン3 世界への挑戦!!",
+                "GO1" => "イナズマイレブンGO",
+                "GO2" => "イナズマイレブンGO2 クロノ・ストーン",
+                "GO3" => "イナズマイレブンGO3 ギャラクシー",
+                "ALS" => "イナズマイレブン アレスの天秤",
+                "ORI" => "イナズマイレブン オリオンの刻印",
+                "VIC" => "イナズマイレブン 英雄たちのヴィクトリーロード",
+                _ => "不明なシリーズ",
+            }.to_string();
+
+            Opponent {
+                id: unique_id,
+                team_name: record.team_name.clone(),
+                series_short: record.series_short.clone(),
+                series_full,
+                source: record.mode.clone(),
+                difficulties: Vec::new(),
+                level: 0, // 初期値
+                difficulty_name: String::new(), // 初期値
+            }
         });
         
         let difficulties_data = [
@@ -144,7 +165,7 @@ fn get_eligible_opponents(
     let max_player_level = settings.player_team_level.saturating_add(settings.level_tolerance_upper);
 
     for opponent in all_opponents.iter() {
-        if settings.unlocked_opponents.contains(&opponent.name) && settings.allowed_sources.contains(&opponent.source) {
+        if settings.unlocked_opponents.contains(&opponent.id) && settings.allowed_sources.contains(&opponent.source) {
             let mut best_difficulty: Option<&Difficulty> = None;
             let mut min_diff_level = 255; 
 
@@ -180,7 +201,7 @@ pub fn get_playable_opponents_info(settings_val: JsValue) -> Result<JsValue, JsV
     
     let formatted_opponents: Vec<String> = eligible_opponents
         .iter()
-        .map(|o| format!("{} (Lv.{})", o.name, o.level))
+        .map(|o| format!("{} (Lv.{})", o.id, o.level))
         .collect();
 
     let info = PlayableOpponentInfo {
@@ -215,7 +236,7 @@ pub fn generate_tournament(settings_val: JsValue) -> Result<JsValue, JsValue> {
     
     let participants_map: HashMap<String, Opponent> = selected_opponents
         .into_iter()
-        .map(|o| (o.name.clone(), o))
+        .map(|o| (o.id.clone(), o))
         .collect();
 
     let mut participant_names: Vec<String> = participants_map.keys().cloned().collect();
@@ -291,9 +312,9 @@ pub async fn update_match_result(
             let stronger_team_win_rate = 0.5 + (win_rate_bonus as f64 / 100.0);
 
             let winner = if rng.gen_bool(stronger_team_win_rate) {
-                if team1_is_stronger { &team1.name } else { &team2.name }
+                if team1_is_stronger { &team1.id } else { &team2.id }
             } else {
-                if team1_is_stronger { &team2.name } else { &team1.name }
+                if team1_is_stronger { &team2.id } else { &team1.id }
             };
             
             if let Some(match_to_update) = tournament.rounds[round_index].get_mut(i) {

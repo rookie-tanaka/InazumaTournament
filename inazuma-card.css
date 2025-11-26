@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=M+PLUS+1p:wght@100;300;400;500;700;800;900&family=Montserrat:ital,wght@1,100..900&display=swap');
+
+.container {
+    width: 400px;
+    height: 250px;
+    background: #1E39DA;
+    background: linear-gradient(0deg, rgba(30, 57, 218, 1) 0%, rgba(79, 241, 244, 1) 80%);
+    border-radius: 30px;
+
+    position: relative;
+    -webkit-user-select: none; /* Safari, Chrome */
+    -moz-user-select: none; /* Firefox */
+    -ms-user-select: none; /* IE 10+ */
+    user-select: none; /* Standard */
+
+}
+
+.bg-thunder {
+    height: 250px;
+    width: 250px;
+    background-color: rgba(255,255,255,0.4);
+    clip-path: polygon(70% 0, 53% 36%, 73% 33%, 28% 100%, 37% 51%, 16% 56%, 31% 0);
+    position: absolute;
+    right: -20%;
+    mix-blend-mode: overlay;
+
+}
+
+.bg-series {
+    font-family: "Montserrat", sans-selif;
+    font-weight: bold;
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 96px;
+    position: absolute;
+    top: -15%;
+    left: -1%;
+    letter-spacing: -3px;
+
+}
+
+.level {
+    font-family: "Montserrat", sans-selif;
+    font-weight: bold;
+    color: white;
+    font-size: 72px;
+    position: absolute;
+    bottom: -4px;
+    right: 20px;
+    text-align: center;
+}
+
+.info {
+    font-family: "M PLUS 1p";
+    font-weight: 900;
+    color: white;
+    font-size: 16px;
+    position: absolute;
+    transform: translate(0, -50%);
+    top: 50%;
+    left: 12px;
+}
+
+.team-name {
+    font-size: 28px;
+}
