@@ -148,6 +148,11 @@ fn load_opponents_from_csv() -> Result<Vec<Opponent>, String> {
                         level,
                     });
                 }
+                // difficulties が空でなければ、最初の難易度をデフォルトとして設定
+                if let Some(first_difficulty) = opponent.difficulties.first() {
+                    opponent.level = first_difficulty.level;
+                    opponent.difficulty_name = first_difficulty.name.clone();
+                }
             }
         }
     }
@@ -164,10 +169,17 @@ fn get_eligible_opponents(
     let min_player_level = settings.player_team_level.saturating_sub(settings.level_tolerance_lower);
     let max_player_level = settings.player_team_level.saturating_add(settings.level_tolerance_upper);
 
+    /* デバッグに
+    return Err(format!(
+        "デバッグ情報: PlayerLv={}, TolLower={}, TolUpper={}, MinLv={}, MaxLv={}",
+        settings.player_team_level, settings.level_tolerance_lower, settings.level_tolerance_upper, min_player_level, max_player_level
+    ));
+    */
+
     for opponent in all_opponents.iter() {
         if settings.unlocked_opponents.contains(&opponent.id) && settings.allowed_sources.contains(&opponent.source) {
             let mut best_difficulty: Option<&Difficulty> = None;
-            let mut min_diff_level = 255; 
+            let mut min_diff_level = 255;
 
             for difficulty in opponent.difficulties.iter() {
                 if difficulty.level >= min_player_level && difficulty.level <= max_player_level {
@@ -185,6 +197,7 @@ fn get_eligible_opponents(
                 new_opponent.difficulty_name = diff.name.clone();
                 potential_opponents.push(new_opponent);
             }
+            
         }
     }
     Ok(potential_opponents)

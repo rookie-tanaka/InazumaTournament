@@ -215,7 +215,6 @@ function renderTournament() {
 
 
     const getTeamDisplayHTML = (teamId) => {
-        const opponent = allOpponents.find(team => team.id === teamId);
         // プレイヤー用の特別なカード
         if (teamId === 'プレイヤー') {
             const playerLevel = playerLevelInput.value;
@@ -232,6 +231,11 @@ function renderTournament() {
             `;
         }
 
+        const baseOpponent = allOpponents.find(o => o.id === teamId);
+        const tournamentOpponent = currentTournament.participants[teamId];
+
+        const opponent = tournamentOpponent ? { ...baseOpponent, ...tournamentOpponent } : baseOpponent;
+
 
         if (opponent) {
             let difficultyClass = '';
@@ -245,7 +249,7 @@ function renderTournament() {
             };
 
             for (const [className, keywords] of Object.entries(difficultyMap)) {
-                if (keywords.some(keyword => difficultyName.includes(keyword))) {
+                if (difficultyName && keywords.some(keyword => difficultyName.includes(keyword))) {
                     difficultyClass = className;
                     break;
                 }
