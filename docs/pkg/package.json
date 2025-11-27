@@ -1,0 +1,18 @@
+{
+  "name": "InazumaTournament",
+  "type": "module",
+  "collaborators": [
+    "Tanaka <tonkatu0741@gmail.com>"
+  ],
+  "version": "0.1.0",
+  "files": [
+    "InazumaTournament_bg.wasm",
+    "InazumaTournament.js",
+    "InazumaTournament.d.ts"
+  ],
+  "main": "InazumaTournament.js",
+  "types": "InazumaTournament.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
