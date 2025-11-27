@@ -7,8 +7,8 @@
     "test": "tests"
   },
   "scripts": {
-    "build:wasm": "rm -rf www/pkg && wasm-pack build --target web --out-dir www/pkg",
-    "serve": "npx http-server www",
+    "build:wasm": "rm -rf docs/pkg && wasm-pack build --target web --out-dir docs/pkg",
+    "serve": "npx http-server docs",
     "start": "npm run build:wasm && npm run serve",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
