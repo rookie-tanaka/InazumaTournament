@@ -85,21 +85,22 @@ function populateOpponentList() {
 
             // シリーズフィルター
             if (selectedSeries === 'ALL') return true;
-            return opponent.series_short === selectedSeries;
+            const seriesMatch = opponent.name.match(/\((.*?)\)/);
+            return seriesMatch && seriesMatch[1] === selectedSeries;
         })
         .forEach(opponent => {
             const div = document.createElement('div');
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            checkbox.id = `opponent-${opponent.id.replace(/\s|\(|\)|\-/g, '_')}`;
-            checkbox.value = opponent.id;
+            checkbox.id = `opponent-${opponent.name.replace(/\s|\(|\)|\-/g, '_')}`;
+            checkbox.value = opponent.name;
             
             // 初回ロード時はすべてチェック、それ以外は以前の状態を維持
-            checkbox.checked = isFirstLoad || checkedOpponents.has(opponent.id);
+            checkbox.checked = isFirstLoad || checkedOpponents.has(opponent.name);
 
             const label = document.createElement('label');
-            label.htmlFor = `opponent-${opponent.id.replace(/\s|\(|\)|\-/g, '_')}`;
-            label.textContent = opponent.id;
+            label.htmlFor = `opponent-${opponent.name.replace(/\s|\(|\)|\-/g, '_')}`;
+            label.textContent = opponent.name;
 
             div.appendChild(checkbox);
             div.appendChild(label);
@@ -213,65 +214,15 @@ function renderTournament() {
     tournamentStatusHeading.textContent = currentTournament.status;
     tournamentBracketDiv.innerHTML = '';
 
-
-    const getTeamDisplayHTML = (teamId) => {
-        // プレイヤー用の特別なカード
-        if (teamId === 'プレイヤー') {
-            const playerLevel = playerLevelInput.value;
-            return `
-                <div class="inazuma-card player-card">
-                    <div class="iz-card-bg-thunder"></div>
-                    <span class="iz-card-bg-series">PLAYER</span>
-                    <span class="iz-card-level">${playerLevel}</span>
-                    <p class="iz-card-info">
-                        <span class="iz-card-team-name">プレイヤー</span><br><br>
-                        自分のチーム
-                    </p>
-                </div>
-            `;
+    const getTeamDisplayHTML = (teamName) => {
+        if (teamName === 'プレイヤー') {
+            return `<span class="team-name player">プレイヤー</span>`;
         }
-
-        const baseOpponent = allOpponents.find(o => o.id === teamId);
-        const tournamentOpponent = currentTournament.participants[teamId];
-
-        const opponent = tournamentOpponent ? { ...baseOpponent, ...tournamentOpponent } : baseOpponent;
-
-
+        const opponent = currentTournament.participants.get(teamName);
         if (opponent) {
-            let difficultyClass = '';
-            const difficultyName = opponent.difficulty_name;
-
-            const difficultyMap = {
-                'difficulty-one': ['イナズマ級', '初級'],
-                'difficulty-two': ['デスゾーン級', 'ルート解放バトル', '中級'],
-                'difficulty-three': ['レアドロップバトル', 'ゴッド級', '上級'],
-                'difficulty-four': ['英雄伝説級', 'ヒーローバトル', 'チャレンジ'],
-            };
-
-            for (const [className, keywords] of Object.entries(difficultyMap)) {
-                if (difficultyName && keywords.some(keyword => difficultyName.includes(keyword))) {
-                    difficultyClass = className;
-                    break;
-                }
-            }
-
-            return `
-                <div class="inazuma-card ${difficultyClass}">
-                    <img class="iz-card-bg-holo" src="./702.jpg" alt=""/>
-                    <div class="iz-card-bg-thunder"></div>
-                    <span class="iz-card-bg-series">${opponent.series_short}</span>
-                    <span class="iz-card-level">${opponent.level}</span>
-                    <p class="iz-card-info">
-                        <span class="iz-card-team-name">${opponent.team_name}</span><br><br>
-                        ${opponent.series_full}<br>
-                        ${opponent.source} ${difficultyName}
-                    </p>
-                </div>
-            `;
+            return `<span class="team-name opponent">${opponent.name} <span class="team-details">(Lv.${opponent.level}, ${opponent.difficulty_name})</span></span>`;
         }
-        
-        // フォールバック（不戦勝などで参加者がいない場合など）
-        return `<div class="inazuma-card empty-card"><span class="iz-card-team-name">${teamId}</span></div>`;
+        return `<span class="team-name">${teamName}</span>`; // フォールバック
     };
 
     const isTournamentOver = currentTournament.status === "ゲームオーバー" || currentTournament.status.includes("優勝");
