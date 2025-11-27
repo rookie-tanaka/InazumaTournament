@@ -2,10 +2,11 @@ use wasm_bindgen::prelude::*;
 use serde::{Serialize, Deserialize};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use web_sys;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use rand::Rng;
+use gloo_net::http::Request;
+
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -96,9 +97,18 @@ struct CsvRecord {
     d4_level: String,
 }
 
-fn load_opponents_from_csv() -> Result<Vec<Opponent>, String> {
-    const CSV_DATA: &str = include_str!("../Teams.csv");
-    let mut reader = csv::Reader::from_reader(CSV_DATA.as_bytes());
+
+async fn load_opponents_from_csv() -> Result<Vec<Opponent>, String> {
+    // /docs/Teams.csv/
+    let csv_text = Request::get("Teams.csv")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch CSV: {}", e))?
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response text: {}", e))?;
+
+    let mut reader = csv::Reader::from_reader(csv_text.as_bytes());
     
     let mut opponents_map: IndexMap<String, Opponent> = IndexMap::new();
 
@@ -161,20 +171,13 @@ fn load_opponents_from_csv() -> Result<Vec<Opponent>, String> {
 }
 
 // 指定された設定に基づいて、対戦可能な相手チームのリストを返すヘルパー関数
-fn get_eligible_opponents(
+async fn get_eligible_opponents(
     settings: &TournamentSettings,
 ) -> Result<Vec<Opponent>, String> {
-    let all_opponents = load_opponents_from_csv()?;
+    let all_opponents = load_opponents_from_csv().await?;
     let mut potential_opponents: Vec<Opponent> = Vec::new();
     let min_player_level = settings.player_team_level.saturating_sub(settings.level_tolerance_lower);
     let max_player_level = settings.player_team_level.saturating_add(settings.level_tolerance_upper);
-
-    /* デバッグに
-    return Err(format!(
-        "デバッグ情報: PlayerLv={}, TolLower={}, TolUpper={}, MinLv={}, MaxLv={}",
-        settings.player_team_level, settings.level_tolerance_lower, settings.level_tolerance_upper, min_player_level, max_player_level
-    ));
-    */
 
     for opponent in all_opponents.iter() {
         if settings.unlocked_opponents.contains(&opponent.id) && settings.allowed_sources.contains(&opponent.source) {
@@ -205,11 +208,11 @@ fn get_eligible_opponents(
 
 
 #[wasm_bindgen]
-pub fn get_playable_opponents_info(settings_val: JsValue) -> Result<JsValue, JsValue> {
+pub async fn get_playable_opponents_info(settings_val: JsValue) -> Result<JsValue, JsValue> {
     let settings: TournamentSettings = serde_wasm_bindgen::from_value(settings_val)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize settings: {}", e)))?;
     
-    let eligible_opponents = get_eligible_opponents(&settings)
+    let eligible_opponents = get_eligible_opponents(&settings).await
         .map_err(|e| JsValue::from_str(&e))?;
     
     let formatted_opponents: Vec<String> = eligible_opponents
@@ -228,13 +231,13 @@ pub fn get_playable_opponents_info(settings_val: JsValue) -> Result<JsValue, JsV
 
 
 #[wasm_bindgen]
-pub fn generate_tournament(settings_val: JsValue) -> Result<JsValue, JsValue> {
+pub async fn generate_tournament(settings_val: JsValue) -> Result<JsValue, JsValue> {
     let settings: TournamentSettings = serde_wasm_bindgen::from_value(settings_val)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize settings: {}", e)))?;
 
     let mut rng = thread_rng();
 
-    let potential_opponents = get_eligible_opponents(&settings)
+    let potential_opponents = get_eligible_opponents(&settings).await
         .map_err(|e| JsValue::from_str(&e))?;
     
     let num_opponents_to_select = (settings.team_count as i32 - 1).max(0) as usize;
@@ -380,8 +383,8 @@ pub async fn update_match_result(
 }
 
 #[wasm_bindgen]
-pub fn get_all_opponents() -> Result<JsValue, JsValue> {
-    let opponents = load_opponents_from_csv()
+pub async fn get_all_opponents() -> Result<JsValue, JsValue> {
+    let opponents = load_opponents_from_csv().await
         .map_err(|e| JsValue::from_str(&e))?;
     serde_wasm_bindgen::to_value(&opponents)
         .map_err(|e| JsValue::from_str(&e.to_string()))

@@ -29,7 +29,7 @@ async function initializeApp() {
     await init();
     
     try {
-        allOpponents = get_all_opponents();
+        allOpponents = await get_all_opponents();
         populateOpponentList();
     } catch (e) {
         console.error("対戦相手リストの取得に失敗しました:", e);
@@ -122,7 +122,7 @@ function showTournamentScreen() {
 }
 
 // --- 対戦可能なチーム数を更新し表示する ---
-function updatePlayableOpponentsCount() {
+async function updatePlayableOpponentsCount() {
     const settings = {
         player_team_level: parseInt(playerLevelInput.value, 10),
         team_count: parseInt(teamCountSelect.value, 10),
@@ -134,7 +134,7 @@ function updatePlayableOpponentsCount() {
     };
 
     try {
-        const info = get_playable_opponents_info(settings);
+        const info = await get_playable_opponents_info(settings);
         playableOpponentsCountDisplay.textContent = info.count;
         if (info.count < parseInt(teamCountSelect.value, 10) -1) {
             playableOpponentsCountDisplay.parentElement.style.color = 'red';
@@ -150,7 +150,7 @@ function updatePlayableOpponentsCount() {
 
 
 // --- トーナメント生成 ---
-function handleGenerateTournament() {
+async function handleGenerateTournament() {
     const settings = {
         player_team_level: parseInt(playerLevelInput.value, 10),
         team_count: parseInt(teamCountSelect.value, 10),
@@ -162,14 +162,14 @@ function handleGenerateTournament() {
     };
 
     const requiredOpponents = settings.team_count -1;
-    const playableInfo = get_playable_opponents_info(settings);
+    const playableInfo = await get_playable_opponents_info(settings);
     if (playableInfo.count < requiredOpponents) {
         alert(`対戦可能なチームが足りません。${requiredOpponents}チーム必要ですが、${playableInfo.count}チームしかいません。設定を見直してください。`);
         return;
     }
 
     try {
-        currentTournament = generate_tournament(settings);
+        currentTournament = await generate_tournament(settings);
         renderTournament();
         showTournamentScreen();
     } catch (e) {
